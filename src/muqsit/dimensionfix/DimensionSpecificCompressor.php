@@ -89,6 +89,10 @@ final class DimensionSpecificCompressor implements Compressor{
 				$bits_per_block = $byte >> 1;
 				$persistent_block_states = ($byte & 0x01) === 0;
 
+				if (!isset($BITS_PER_BLOCK_TO_WORD_ARRAY_LENGTH[$bits_per_block])) {
+					continue;
+				}
+
 				$extra_payload->get($BITS_PER_BLOCK_TO_WORD_ARRAY_LENGTH[$bits_per_block]); // words
 				if($bits_per_block !== 0){
 					$palette_count = $extra_payload->getUnsignedVarInt() >> 1;
