@@ -143,6 +143,6 @@ final class DimensionSpecificCompressor implements Compressor{
 	}
 
 	public function getNetworkId(): int{
-		return $this->dimension_id;
+		return $this->inner->getNetworkId();
 	}
 }
