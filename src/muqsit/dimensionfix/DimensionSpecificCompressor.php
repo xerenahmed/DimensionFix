@@ -14,6 +14,7 @@ use pocketmine\network\mcpe\protocol\serializer\PacketSerializer;
 use pocketmine\network\mcpe\protocol\serializer\PacketSerializerContext;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\serializer\ChunkSerializer;
+use pocketmine\utils\BinaryStream;
 use function assert;
 use function substr;
 use function substr_replace;
@@ -28,7 +29,7 @@ final class DimensionSpecificCompressor implements Compressor{
 	 */
 	public function __construct(
 		private Compressor $inner,
-		int $dimension_id
+		private int $dimension_id
 	){
 		$this->biome_palettes_to_reduce = match($dimension_id){ // values relative to 24
 			DimensionIds::NETHER => 16,
@@ -47,17 +48,25 @@ final class DimensionSpecificCompressor implements Compressor{
 
 	public function compress(string $payload) : string{
 		$context = new PacketSerializerContext(GlobalItemTypeDictionary::getInstance()->getDictionary());
-		foreach((new PacketBatch($payload))->getPackets(PacketPool::getInstance(), $context, 1) as [$packet, $buffer]){
+		$pool = PacketPool::getInstance();
+		foreach(PacketBatch::decodeRaw(new BinaryStream($payload)) as $buffer){
+			$packet = $pool->getPacket($buffer);
 			if($packet instanceof LevelChunkPacket){
+
 				$packet->decode(PacketSerializer::decoder($buffer, 0, $context));
 				$payload_with_reduced_biomes = $this->reduceBiomePalettesInPayload($context, $packet->getSubChunkCount() - ChunkSerializer::LOWER_PADDING_SIZE, $packet->getExtraPayload(), $this->biome_palettes_to_reduce);
-				$payload = PacketBatch::fromPackets($context, LevelChunkPacket::create(
+				$packet = LevelChunkPacket::create(
 					$packet->getChunkPosition(),
+					$this->dimension_id,
 					$packet->getSubChunkCount() - ChunkSerializer::LOWER_PADDING_SIZE,
 					$packet->isClientSubChunkRequestEnabled(),
 					$packet->getUsedBlobHashes(),
 					substr($payload_with_reduced_biomes, ChunkSerializer::LOWER_PADDING_SIZE * 2)
-				))->getBuffer();
+				);
+
+				$stream = new BinaryStream();
+				PacketBatch::encodePackets($stream, $context, [$packet]);
+				$payload = $stream->getBuffer();
 			}
 		}
 		return $this->inner->compress($payload);
@@ -131,5 +140,9 @@ final class DimensionSpecificCompressor implements Compressor{
 		$biome_length = $biome_end_offset - $biome_start_offset;
 
 		return substr_replace($payload, "", $biome_start_offset + 1, $biome_length * $reduction);
+	}
+
+	public function getNetworkId(): int{
+		return $this->dimension_id;
 	}
 }
